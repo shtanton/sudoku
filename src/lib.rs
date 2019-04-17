@@ -110,10 +110,8 @@ impl<'a> Display for Partial<'a> {
     }
 }
 
-pub fn run(sudoku_fname: &str, group_fname: &str) -> Result<(), String> {
-    let cells: Vec<Cell> = fs::read_to_string(sudoku_fname)
-        .map_err(|_| "Error reading sudoku file")?
-        .trim()
+pub fn run(sudoku: &str, group_fname: &str) -> Result<(), String> {
+    let cells: Vec<Cell> = sudoku
         .split(',')
         .map(|c| c.parse::<Cell>())
         .collect::<Result<Vec<Cell>, String>>()?;
