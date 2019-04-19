@@ -21,36 +21,33 @@ impl FromStr for Group {
 }
 
 #[derive(Clone)]
-struct Cell<'a> {
+struct Cell {
     value: u8,
-    groups: Vec<&'a Group>,
+    groups: Vec<u8>,
+    avoid: [bool; 10],
 }
 
-impl<'a> Cell<'a> {
-    fn new<'b>(value: u8) -> Cell<'b> {
+impl Cell {
+    fn new(value: u8) -> Cell {
         Cell {
             value,
             groups: Vec::with_capacity(3),
+            avoid: [false; 10],
         }
     }
-    fn add_group(&mut self, group: &'a Group) {
-        self.groups.push(group);
-    }
-    fn possible_values(&self, cells: &Vec<Cell>) -> Vec<u8> {
-        let mut avoid: [bool; 10] = [false; 10];
-        for group in self.groups.iter() {
-            for index in group.cells.iter() {
-                avoid[cells[*index as usize].value as usize] = true;
-            }
-        }
-        let mut size: usize = 0;
-        for v in avoid.iter().skip(1) {
+    fn possible_size(&self) -> u8 {
+        let mut size: u8 = 0;
+        for v in self.avoid.iter().skip(1) {
             if !*v {
                 size += 1;
             }
         }
+        size
+    }
+    fn possible_values(&self) -> Vec<u8> {
+        let size = self.possible_size() as usize;
         let mut possible_values: Vec<u8> = Vec::with_capacity(size);
-        for (i, v) in avoid.iter().enumerate().skip(1) {
+        for (i, v) in self.avoid.iter().enumerate().skip(1) {
             if !*v {
                 possible_values.push(i as u8);
             }
@@ -59,7 +56,7 @@ impl<'a> Cell<'a> {
     }
 }
 
-impl<'a> FromStr for Cell<'a> {
+impl<'a> FromStr for Cell {
     type Err = String;
 
     fn from_str(s: &str) -> Result<Self, Self::Err> {
@@ -69,7 +66,7 @@ impl<'a> FromStr for Cell<'a> {
     }
 }
 
-impl<'a> Display for Cell<'a> {
+impl<'a> Display for Cell {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         write!(f, "{}", self.value)
     }
@@ -77,23 +74,31 @@ impl<'a> Display for Cell<'a> {
 
 #[derive(Clone)]
 struct Partial<'a> {
-    cells: Vec<Cell<'a>>,
+    cells: Vec<Cell>,
+    groups: &'a Vec<Group>,
 }
 
 impl<'a> Partial<'a> {
-    fn new<'b>(mut cells: Vec<Cell<'b>>, groups: &'b Vec<Group>) -> Partial<'b> {
-        for group in groups.iter() {
-            for index in group.cells.iter() {
-                cells[*index as usize].add_group(group);
+    fn new<'b>(cells: Vec<Cell>, groups: &'b Vec<Group>) -> Partial<'b> {
+        let mut partial = Partial {cells, groups};
+        for (index, group) in groups.iter().enumerate() {
+            for i in group.cells.iter() {
+                partial.cells[*i as usize].groups.push(index as u8);
+                for iv in group.cells.iter() {
+                    let value = partial.cells[*iv as usize].value;
+                    partial.cells[*i as usize].avoid[value as usize] = true;
+                }
             }
         }
-        Partial { cells }
+        partial
     }
     fn next_empty(&self) -> Option<usize> {
         let cells_iter = self.cells.iter();
         let index = cells_iter
             .enumerate()
-            .find_map(|(i, c)| if c.value == 0 { Some(i) } else { None });
+            .filter(|(_, c)| c.value == 0)
+            .min_by(|(_, x), (_, y)| x.possible_size().cmp(&y.possible_size()))
+            .map(|(i, _)| i);
         index
     }
 }
@@ -124,7 +129,7 @@ pub fn run(sudoku: &str, group_fname: &str) -> Result<(), String> {
     let mut stack: Vec<Partial> = vec![Partial::new(cells, &groups)];
 
     while !stack.is_empty() {
-        let mut start: Partial = stack.pop().expect("SOMETHING WENT HORRIBLY WRONG");
+        let start: Partial = stack.pop().expect("SOMETHING WENT HORRIBLY WRONG");
         match start.next_empty() {
             None => {
                 //PRINT
@@ -132,9 +137,23 @@ pub fn run(sudoku: &str, group_fname: &str) -> Result<(), String> {
                 println!("{}", start);
             }
             Some(i) => {
-                for v in start.cells[i].possible_values(&start.cells).iter() {
-                    start.cells[i].value = *v;
-                    let next: Partial = start.clone();
+                for v in start.cells[i].possible_values().iter() {
+                    let mut next: Partial = start.clone();
+                    let (pre_cells, cell, post_cells) = {
+                        let (pre_cells, post_cells) = next.cells.split_at_mut(i);
+                        let (cell, post_cells) = post_cells.split_at_mut(1);
+                        (pre_cells, &mut cell[0], post_cells)
+                    };
+                    cell.value = *v;
+                    for group_index in cell.groups.iter() {
+                        for index in start.groups[*group_index as usize].cells.iter() {
+                            if *index < i as u8 {
+                                pre_cells[*index as usize].avoid[*v as usize] = true;
+                            } else if *index > i as u8 {
+                                post_cells[*index as usize - i - 1].avoid[*v as usize] = true;
+                            }
+                        }
+                    }
                     stack.push(next);
                 }
             }
