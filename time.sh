@@ -1,4 +1,4 @@
 start=$(date)
-head -n 10000 alot.txt | xargs -I % -n 1 sh -c "echo % | ./target/release/sudoku nine.fmt"
+head -n 5 alot.txt | ./target/release/sudoku nine.fmt
 echo $start
 date

@@ -51,7 +51,7 @@ fn main() {
         process::exit(1);
     });
 
-    if let Err(err) = sudoku::run(&config.sud, &config.fmt_fname) {
+    if let Err(err) = sudoku::run(config.sud, config.fmt_fname) {
         println!("Error:\n{}", err);
         process::exit(1);
     };

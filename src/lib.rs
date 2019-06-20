@@ -115,18 +115,12 @@ impl<'a> Display for Partial<'a> {
     }
 }
 
-pub fn run(sudoku: &str, group_fname: &str) -> Result<(), String> {
+fn process_single(sudoku: &str, groups: &Vec<Group>) -> Result<(), String> {
     let cells: Vec<Cell> = sudoku
         .split(',')
         .map(|c| c.parse::<Cell>())
         .collect::<Result<Vec<Cell>, String>>()?;
-    let groups: Vec<Group> = fs::read_to_string(group_fname)
-        .map_err(|_| "Error reading format file")?
-        .trim()
-        .split('\n')
-        .map(|g| g.parse::<Group>())
-        .collect::<Result<Vec<Group>, String>>()?;
-    let mut stack: Vec<Partial> = vec![Partial::new(cells, &groups)];
+    let mut stack: Vec<Partial> = vec![Partial::new(cells, groups)];
 
     while !stack.is_empty() {
         let start: Partial = stack.pop().expect("SOMETHING WENT HORRIBLY WRONG");
@@ -158,6 +152,22 @@ pub fn run(sudoku: &str, group_fname: &str) -> Result<(), String> {
                 }
             }
         }
+    }
+
+    Ok(())
+}
+
+pub fn run (sud_string: String, fmt_fname: String) -> Result<(), String>{
+    let groups: Vec<Group> = fs::read_to_string(fmt_fname)
+        .map_err(|_| "Error reading format file")?
+        .trim()
+        .split('\n')
+        .map(|g| g.parse::<Group>())
+        .collect::<Result<Vec<Group>, String>>()?;
+    let suds: Vec<&str> = sud_string.split("\n").collect();
+
+    for sud in suds.iter() {
+        process_single(sud, &groups)?;
     }
 
     Ok(())
