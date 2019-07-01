@@ -1,4 +1,1 @@
-start=$(date)
-./target/release/sudoku nine.fmt alot.txt
-echo $start
-date
+time ./target/release/sudoku nine.fmt alot.txt

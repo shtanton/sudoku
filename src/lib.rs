@@ -1,6 +1,15 @@
+extern crate crossbeam_deque;
+extern crate crossbeam_utils;
+
 use std::fmt::Display;
 use std::fs;
 use std::str::FromStr;
+use std::iter;
+
+use crossbeam_deque::{Injector, Stealer, Worker};
+use crossbeam_utils::thread;
+
+const NTHREADS: usize = 20;
 
 #[derive(Clone)]
 struct Group {
@@ -101,6 +110,36 @@ impl<'a> Partial<'a> {
             .map(|(i, _)| i);
         index
     }
+    fn children(self) -> Vec<Partial<'a>> {
+        match self.next_empty() {
+            None => {
+                //PRINT
+                println!("{}", self);
+                Vec::new()
+            }
+            Some(i) => {
+                self.cells[i].possible_values().iter().map(|v| {
+                    let mut next: Partial = self.clone();
+                    let (pre_cells, cell, post_cells) = {
+                        let (pre_cells, post_cells) = next.cells.split_at_mut(i);
+                        let (cell, post_cells) = post_cells.split_at_mut(1);
+                        (pre_cells, &mut cell[0], post_cells)
+                    };
+                    cell.value = *v;
+                    for group_index in cell.groups.iter() {
+                        for index in self.groups[*group_index as usize].cells.iter() {
+                            if *index < i as u8 {
+                                pre_cells[*index as usize].avoid[*v as usize] = true;
+                            } else if *index > i as u8 {
+                                post_cells[*index as usize - i - 1].avoid[*v as usize] = true;
+                            }
+                        }
+                    }
+                    next
+                }).collect::<Vec<_>>()
+            }
+        }
+    }
 }
 
 impl<'a> Display for Partial<'a> {
@@ -124,37 +163,32 @@ fn process_single(sudoku: &str, groups: &Vec<Group>) -> Result<(), String> {
 
     while !stack.is_empty() {
         let start: Partial = stack.pop().expect("SOMETHING WENT HORRIBLY WRONG");
-        match start.next_empty() {
-            None => {
-                //PRINT
-                println!("Solution:");
-                println!("{}", start);
-            }
-            Some(i) => {
-                for v in start.cells[i].possible_values().iter() {
-                    let mut next: Partial = start.clone();
-                    let (pre_cells, cell, post_cells) = {
-                        let (pre_cells, post_cells) = next.cells.split_at_mut(i);
-                        let (cell, post_cells) = post_cells.split_at_mut(1);
-                        (pre_cells, &mut cell[0], post_cells)
-                    };
-                    cell.value = *v;
-                    for group_index in cell.groups.iter() {
-                        for index in start.groups[*group_index as usize].cells.iter() {
-                            if *index < i as u8 {
-                                pre_cells[*index as usize].avoid[*v as usize] = true;
-                            } else if *index > i as u8 {
-                                post_cells[*index as usize - i - 1].avoid[*v as usize] = true;
-                            }
-                        }
-                    }
-                    stack.push(next);
-                }
-            }
-        }
+        let mut new: Vec<Partial> = start.children();
+        stack.append(&mut new);
     }
 
     Ok(())
+}
+
+fn find_task<T>(
+    local: &Worker<T>,
+    global: &Injector<T>,
+    stealers: &[Stealer<T>],
+) -> Option<T> {
+    // Pop a task from the local queue, if not empty.
+    local.pop().or_else(|| {
+        // Otherwise, we need to look for a task elsewhere.
+        iter::repeat_with(|| {
+            // Try stealing a batch of tasks from the global queue.
+            global.steal_batch_and_pop(local)
+                // Or try stealing a task from one of the other threads.
+                .or_else(|| stealers.iter().map(|s| s.steal()).collect())
+        })
+        // Loop while no task was stolen and any steal operation needs to be retried.
+        .find(|s| !s.is_retry())
+        // Extract the stolen task, if there is one.
+        .and_then(|s| s.success())
+    })
 }
 
 pub fn run (sud_string: String, fmt_fname: String) -> Result<(), String>{
@@ -164,11 +198,27 @@ pub fn run (sud_string: String, fmt_fname: String) -> Result<(), String>{
         .split('\n')
         .map(|g| g.parse::<Group>())
         .collect::<Result<Vec<Group>, String>>()?;
-    let suds: Vec<&str> = sud_string.split("\n").map(|s| {s.trim()}).collect();
 
-    for sud in suds.iter() {
-        process_single(sud, &groups)?;
-    }
+    let suds = Injector::<&str>::new();
+    sud_string.split("\n").map(|s| {s.trim()}).for_each(|s| {suds.push(s)});
+
+
+    thread::scope(|s| {
+        let mut threads = Vec::with_capacity(NTHREADS);
+        let mut stealers = Vec::with_capacity(NTHREADS);
+        (0..NTHREADS).for_each(|_| {
+            let queue: Worker<&str> = Worker::new_fifo();
+            stealers.push(queue.stealer());
+            let stealers = stealers.clone();
+            threads.push(s.spawn(|_| {
+                let queue = queue;
+                let stealers = stealers;
+                while let Some(sud) = find_task(&queue, &suds, &stealers) {
+                    process_single(sud, &groups).unwrap();
+                }
+            }));
+        });
+    }).unwrap();
 
     Ok(())
 }
