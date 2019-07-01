@@ -164,7 +164,7 @@ pub fn run (sud_string: String, fmt_fname: String) -> Result<(), String>{
         .split('\n')
         .map(|g| g.parse::<Group>())
         .collect::<Result<Vec<Group>, String>>()?;
-    let suds: Vec<&str> = sud_string.split("\n").collect();
+    let suds: Vec<&str> = sud_string.split("\n").map(|s| {s.trim()}).collect();
 
     for sud in suds.iter() {
         process_single(sud, &groups)?;
