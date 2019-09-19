@@ -1,16 +1,9 @@
-extern crate crossbeam_deque;
-extern crate crossbeam_utils;
-
 use std::fmt::Display;
 use std::fs;
 use std::str::FromStr;
-// use std::iter;
 use std::thread;
 use std::sync::mpsc::{channel, Sender};
 use std::sync::Arc;
-
-//use crossbeam_deque::{Injector, Stealer, Worker};
-//use crossbeam_utils::thread;
 
 const NTHREADS: usize = 20;
 
@@ -173,27 +166,6 @@ fn process_single(sudoku: &str, groups: &Vec<Group>) -> Result<(), String> {
     Ok(())
 }
 
-// fn find_task<T>(
-//     local: &Worker<T>,
-//     global: &Injector<T>,
-//     stealers: &[Stealer<T>],
-// ) -> Option<T> {
-//     // Pop a task from the local queue, if not empty.
-//     local.pop().or_else(|| {
-//         // Otherwise, we need to look for a task elsewhere.
-//         iter::repeat_with(|| {
-//             // Try stealing a batch of tasks from the global queue.
-//             global.steal_batch_and_pop(local)
-//                 // Or try stealing a task from one of the other threads.
-//                 .or_else(|| stealers.iter().map(|s| s.steal()).collect())
-//         })
-//         // Loop while no task was stolen and any steal operation needs to be retried.
-//         .find(|s| !s.is_retry())
-//         // Extract the stolen task, if there is one.
-//         .and_then(|s| s.success())
-//     })
-// }
-
 pub fn run (sud_string: String, fmt_fname: String) -> Result<(), String>{
     let groups: Vec<Group> = fs::read_to_string(fmt_fname)
         .map_err(|_| "Error reading format file")?
@@ -237,23 +209,6 @@ pub fn run (sud_string: String, fmt_fname: String) -> Result<(), String>{
 				}
 			}
 		}
-
-    // thread::scope(|s| {
-    //     let mut threads = Vec::with_capacity(NTHREADS);
-    //     let mut stealers = Vec::with_capacity(NTHREADS);
-    //     (0..NTHREADS).for_each(|_| {
-    //         let queue: Worker<&str> = Worker::new_fifo();
-    //         stealers.push(queue.stealer());
-    //         let stealers = stealers.clone();
-    //         threads.push(s.spawn(|_| {
-    //             let queue = queue;
-    //             let stealers = stealers;
-    //             while let Some(sud) = find_task(&queue, &suds, &stealers) {
-    //                 process_single(sud, &groups).unwrap();
-    //             }
-    //         }));
-    //     });
-    // }).unwrap();
 
     Ok(())
 }
